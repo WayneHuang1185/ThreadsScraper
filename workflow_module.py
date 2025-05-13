@@ -64,7 +64,7 @@ class Workflow:
                     response = self.ai.client.models.generate_content(
                         model=self.config.model,
                         contents=payload,
-                        config={'response_mime_type': 'application/json'}
+                        config={"response_mime_type":"application/json"}
                     )
                     single_batch = json.loads(response.text)
                     results.append(single_batch)
@@ -123,9 +123,10 @@ class Workflow:
             return scores
     def select_character_mode(self,mode:str):
         if mode not in self.config.character_select.keys():
-            return 
+            return False
         else:
             self.character=self.config.character_select[mode]
+            return True
     def generate_post(self, userquery: str, style: str, size: int, tag: str, top_k: Optional[int] = None, 
                     gclike: Optional[int] = None, withindays: Optional[int] = None) -> str: 
         try:    
@@ -175,15 +176,16 @@ class Workflow:
 
 if __name__ == "__main__":
     workflow = Workflow()
-    userquery = "戀愛感"#input("請輸入要產生的文章內容短敘述:")
-    category = "Emotion"#input("請輸入要產生的類別文章：")
-    tag = "高中純純的愛"#input("請輸入要使用的標籤:")
-    while category not in ["Emotion","Trend","Practical","Identity"]:
-        print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
-        category = input("請輸入要產生的類別文章：")   
-    size="50"#int(input("請輸入要產生的文章字數："))
-    text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    workflow.select_character_mode('boss')
-    text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    print(text1,text2)
+    workflow.tagging_new_scrape_posts_into_pinecone() 
+    # userquery = "戀愛感"#input("請輸入要產生的文章內容短敘述:")
+    # category = "Emotion"#input("請輸入要產生的類別文章：")
+    # tag = "高中純純的愛"#input("請輸入要使用的標籤:")
+    # while category not in ["Emotion","Trend","Practical","Identity"]:
+    #     print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
+    #     category = input("請輸入要產生的類別文章：")   
+    # size="50"#int(input("請輸入要產生的文章字數："))
+    # text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    # workflow.select_character_mode('boss')
+    # text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    # print(text1,text2) 
 

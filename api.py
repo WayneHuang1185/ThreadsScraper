@@ -1,11 +1,11 @@
 # app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import asyncio
 from workflow_module import Workflow
 import logging
 from typing import Dict, Any, Optional
-
+import os
+import config
 # 設置日誌
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +31,6 @@ def validate_request_data(data: Dict[str, Any]) -> Optional[str]:
     
     if data["style"] not in workflow.config.valid_style:
         return f"Invalid style. Must be one of: {', '.join(workflow.config.valid_style)}"
-    
     return None
 
 @app.route("/generate", methods=["POST"])
@@ -122,6 +121,37 @@ def get_styles():
         "success": True,
         "styles": workflow.config.valid_style
     })
+@app.route("/tone",methods=["POST"])
+def change_tone():
+    """ POST/tone
+    {
+        "tone":語氣風格,
+    } """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No data provided"
+            }), 400
+        if(workflow.select_character_mode(data["tone"])):
+            return jsonify({
+                "success": True,
+                "message": f"successfully change into {data['tone']}'s tone"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"{data['tone']} does not exist"
+            }), 400
+    except Exception as e:
+        logger.error(f"Error changing tone: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
+    
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

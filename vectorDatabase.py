@@ -4,14 +4,13 @@ from sentence_transformers import SentenceTransformer
 from Threads import Threads_scraper 
 import asyncio
 import time
+from config import PINECONE_API_KEY
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional,Dict
 class vectorDatabase:
     def __init__(self, index_name:str="threads"):
-        with open('config/pinecone.json', 'r', encoding='utf-8') as f:
-            cfg = json.load(f)
         self.model=SentenceTransformer('all-mpnet-base-v2')
-        self.pc=Pinecone(api_key=cfg["API_KEY"])
+        self.pc=Pinecone(PINECONE_API_KEY)
         self.index=self._create_index(index_name=index_name, dimension=self.model.get_sentence_embedding_dimension())
         self.filter=FilterBuilder()
     def _create_index(self, index_name:str, dimension:int=768):

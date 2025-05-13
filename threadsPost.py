@@ -1,12 +1,10 @@
 import json
 import requests
-
+from config import THREADS_ACCESS_TOKEN, THREADS_ID
 class ThreadsAPI:
     def __init__(self):
-        with open('config/threadsAPI.json', 'r', encoding='utf-8') as f:
-            cfg = json.load(f)
-        self.access_token = cfg['access_token']
-        self.user_id =cfg['user_id']
+        self.access_token = THREADS_ACCESS_TOKEN
+        self.user_id =THREADS_ID
     def _create_media_container(self,text=None, media_type="TEXT", image_url=None, video_url=None):
         url = f"https://graph.threads.net/v1.0/{self.user_id}/threads"
         params = {

@@ -1,12 +1,10 @@
 from google import genai
 from google.genai.types import HttpOptions
+from config import GOOGLE_API_KEY
 class infoLLM:
     def __init__(self):
         self.client = genai.Client(
-            http_options=HttpOptions(api_version="v1"),
-            vertexai=True,
-            project="threads-poster",
-            location="us-central1",
+            api_key=GOOGLE_API_KEY
         )
         self.system_prompt_tagging="""
         你是一位社群資料分析師，要根據下方定義，判斷每篇 Threads 帖文屬於哪些主題類別。
