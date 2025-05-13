@@ -1,5 +1,4 @@
 from google import genai
-from google.genai.types import HttpOptions
 from config import GOOGLE_API_KEY
 class infoLLM:
     def __init__(self):

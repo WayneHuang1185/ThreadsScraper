@@ -55,5 +55,6 @@ config/
 *.bak
 *.tmp
 venv/
-
+.test/
+test/
 

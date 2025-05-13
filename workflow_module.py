@@ -187,16 +187,16 @@ class Workflow:
 
 if __name__ == "__main__":
     workflow = Workflow()
-    workflow.tagging_new_scrape_posts_into_pinecone() 
-    # userquery = input("請輸入要產生的文章內容短敘述:")
-    # category = input("請輸入要產生的類別文章：")
-    # tag = input("請輸入要使用的標籤:")
-    # while category not in ["Emotion","Trend","Practical","Identity"]:
-    #     print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
-    #     category = input("請輸入要產生的類別文章：")   
-    # size=int(input("請輸入要產生的文章字數："))
-    # text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    # workflow.select_character_mode('boss')
-    # text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    # print(text1,text2) 
+    # workflow.tagging_new_scrape_posts_into_pinecone() 
+    userquery = input("請輸入要產生的文章內容短敘述:")
+    category = input("請輸入要產生的類別文章：")
+    tag = input("請輸入要使用的標籤:")
+    while category not in ["Emotion","Trend","Practical","Identity"]:
+        print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
+        category = input("請輸入要產生的類別文章：")   
+    size=int(input("請輸入要產生的文章字數："))
+    text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    workflow.select_character_mode('boss')
+    text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    print(text1,text2) 
 
