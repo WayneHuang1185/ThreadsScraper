@@ -18,7 +18,7 @@ import os
 class Threads_scraper:
         def __init__(self,search_choice:str="like_count",acc:bool=False,username:Optional[List[str]]=None):
             try:
-                with open('config/existID.json', 'r', encoding='utf-8') as f:
+                with open('existID.json', 'r', encoding='utf-8') as f:
                     self.seen = set(json.load(f))
             except (FileNotFoundError, json.JSONDecodeError):
                     self.seen = set()
@@ -36,10 +36,6 @@ class Threads_scraper:
             self.gcreply=gcreply if gcreply>0 else 0
             self.lttext=lttext if lttext>0 else 0
             self.image_retrieve= True  if image_retrieve else False
-        def _save_seen(self):
-            with open('config/existID.json', 'w', encoding='utf-8') as f:
-                json.dump(list(self.seen), f, ensure_ascii=False, indent=1)
-            print("seen ID saved.")
         def _parse_post(self,item: Dict) -> Dict:
             """把原始 thread_items 物件濃縮成精簡欄位。"""
             return jmespath.search(
@@ -96,10 +92,9 @@ class Threads_scraper:
                                     continue
                                 if self.image_retrieve == parsed.get("media_urls"):
                                     continue
-                                print(f"post id: {parsed['id']}")
+                                #print(f"post id: {parsed['id']}")
                                 if parsed["id"] not in self.seen:
                                     posts.append(parsed)
-                                    self.seen.add(parsed["id"])
                                     # print(self.seen)
                                     if len(posts) >= (idx+1)*batch: 
                                         break
@@ -112,8 +107,6 @@ class Threads_scraper:
                         usertmp.remove(username)
                 self.username=usertmp
                 posts=self._sort_posts(posts,self.search_choice,self.acc)
-                self._save_seen()
-                print(len(posts))
                 return posts    
         def printPost(self,posts):
             for idx, post in enumerate(posts, 1):

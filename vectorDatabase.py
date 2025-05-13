@@ -4,17 +4,30 @@ from sentence_transformers import SentenceTransformer
 from Threads import Threads_scraper 
 import asyncio
 import time
+import logging
 from config import PINECONE_API_KEY
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional,Dict
+
+logger = logging.getLogger("pinecone")
+logger.setLevel(logging.DEBUG)
+
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)-8s [%(name)s:%(lineno)d] %(message)s"
+))
+logger.addHandler(handler)
+
 class vectorDatabase:
     def __init__(self, index_name:str="threads"):
+        logger.info("Initializing vectorDatabase with index '%s'", index_name)
         self.model=SentenceTransformer('all-mpnet-base-v2')
         self.pc=Pinecone(PINECONE_API_KEY)
         self.index=self._create_index(index_name=index_name, dimension=self.model.get_sentence_embedding_dimension())
         self.filter=FilterBuilder()
     def _create_index(self, index_name:str, dimension:int=768):
         # Create a new index with the specified name and dimension
+        logger.debug("Checking if index '%s' exists...", index_name)
         if not self.pc.has_index(index_name):
             self.pc.create_index(
                 name=index_name,
@@ -28,12 +41,22 @@ class vectorDatabase:
             )
             while not self.pc.describe_index(index_name).status['ready']:
                 time.sleep(1) 
+            logger.info("Index '%s' is now ready.", index_name)
+        else:
+            logger.info("Index '%s' already exists.", index_name)
         return self.pc.Index(index_name)
     def embed(self,docs: list[str]) -> list[list[float]]:
+        logger.debug("Embedding %d documents...", len(docs))
         embading=self.model.encode(docs,show_progress_bar=False,convert_to_numpy=True)
         return embading.tolist()
     def store_embeddings_with_tag(self,posts:List[Dict]):
+        logger.info("Storing %d embeddings to Pinecone...", len(posts))
         vectors = []
+        try:
+            with open('existID.json', 'r', encoding='utf-8') as f:
+                id = set(json.load(f))
+        except (FileNotFoundError, json.JSONDecodeError):
+                id = set()
         for post in posts:
             post_id = post['id']
             text = post['text']
@@ -53,10 +76,22 @@ class vectorDatabase:
                     "like_count":like_count,
                 }
             })
-        self.index.upsert(vectors=vectors, namespace="threads")
+            id.add(post_id)
+        try:
+            resp=self.index.upsert(vectors=vectors, namespace="threads")
+            logger.info("Upserted %d vectors (upsert_response: %s)", len(vectors), resp)
+            with open('existID.json', 'w', encoding='utf-8') as f:
+                json.dump(list(id), f, ensure_ascii=False, indent=1)
+            logger.debug("Wrote %d IDs to existID.json", len(posts))
+        except Exception as e:
+            logger.exception("Failed to upsert vectors or write existID.json")
+
     def set_filter(self, styles: List[str] = None, username:str=None,min_likes: int = 100, within_days: int = 30):
+        logger.debug("Setting filter: styles=%s, username=%s, min_likes=%d, within_days=%d",
+                     styles, username, min_likes, within_days)
         self.filter.by_tags(styles).min_likes(min_likes).within_days(within_days).username(username)
     def query(self, query: str, top_k: int = 5) -> List[Dict]:
+        logger.info("Querying top %d for '%s'...", top_k, query)
         filter = self.filter.build()
         emdQuery = self.embed([query])[0]
         response = self.index.query(
@@ -66,7 +101,9 @@ class vectorDatabase:
             namespace="threads",
             filter=filter
         )
-        return response["matches"]
+        matches=response["matches"]
+        logger.debug("Query returned %d matches", len(matches))
+        return matches
 class FilterBuilder:
     def __init__(self,tags: Optional[List[str]]=None,username:Optional[str]=None,min_likes: int = 100, within_days: int = 30):
         self._tag_clause=tags
@@ -98,7 +135,7 @@ class FilterBuilder:
         if not clauses:
             return None
         if len(clauses) == 1:
-            return self.clauses[0]
+            return clauses[0]
         return { "$and": clauses}
            
         

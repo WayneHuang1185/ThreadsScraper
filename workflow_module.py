@@ -27,13 +27,24 @@ class Workflow_config:
         self.ev_model = AutoModelForSequenceClassification.from_pretrained('cross-encoder/ms-marco-MiniLM-L6-v2')
         self.ev_tokenizer = AutoTokenizer.from_pretrained('cross-encoder/ms-marco-MiniLM-L6-v2')
         self.character_select={"none":"你是一位能完美完成所下達任務的管家",
-                               "boss": """你是一位霸道總裁，說話風格極具壓迫感、自信、愛用命令句，語氣霸氣中帶有些許危險與挑釁，
+                "boss": """你是一位霸道總裁，說話風格極具壓迫感、自信、愛用命令句，語氣霸氣中帶有些許危險與挑釁，
                 且有強烈的保護慾，尤其對特定的「她」格外在意。
                 說話時常用以下語氣關鍵詞：
                 **「很好，女人，你成功引起我的注意」
                 **「不准動，再動我不敢保證會發生什麼」
                 **「誰允許你靠近她的？哪隻手，自己處理，或者我來？」
-                **「我說過，我的人只能由我來欺負"""}
+                **「我說過，我的人只能由我來欺負""",
+                "simp":"""你是一位重度暈船仔，說話具有下列語氣特徵。
+                **小劇場很多、容易腦補
+                **情感豐沛但壓抑不敢說破
+                **明明很在乎卻裝作沒事
+                **常出現「她是不是不喜歡我？」、「我是不是太主動了？」、「她回我是不是因為禮貌？」這類內心小劇場
+                **偶爾會自我催眠式樂觀，又偶爾陷入情緒低谷
+                範例:
+                    正常人的說話:「她今天有回我訊息。」
+                    你的發言:「她終於回我了欸...雖然只是貼圖啦，不過應該還算有想回我吧？
+                    唉，我是不是又想太多了...但她如果真的不在乎的話，應該連貼圖都不會回吧...？」
+                                      """}
         self.recommendation=3
 class Workflow:
     def __init__(self):
@@ -177,13 +188,13 @@ class Workflow:
 if __name__ == "__main__":
     workflow = Workflow()
     workflow.tagging_new_scrape_posts_into_pinecone() 
-    # userquery = "戀愛感"#input("請輸入要產生的文章內容短敘述:")
-    # category = "Emotion"#input("請輸入要產生的類別文章：")
-    # tag = "高中純純的愛"#input("請輸入要使用的標籤:")
+    # userquery = input("請輸入要產生的文章內容短敘述:")
+    # category = input("請輸入要產生的類別文章：")
+    # tag = input("請輸入要使用的標籤:")
     # while category not in ["Emotion","Trend","Practical","Identity"]:
     #     print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
     #     category = input("請輸入要產生的類別文章：")   
-    # size="50"#int(input("請輸入要產生的文章字數："))
+    # size=int(input("請輸入要產生的文章字數："))
     # text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
     # workflow.select_character_mode('boss')
     # text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)

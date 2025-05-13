@@ -49,6 +49,7 @@ def generate():
     }
     """
     try:
+        app.logger.debug("ENTER /generate")
         data = request.get_json()
         if not data:
             return jsonify({
@@ -85,7 +86,7 @@ def generate():
                 "success": False,
                 "error": "Failed to generate post after maximum attempts"
             }), 500
-
+        app.logger.info("貼文: %s", post)
         return jsonify({
             "success": True,
             "post": post
