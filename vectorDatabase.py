@@ -55,8 +55,8 @@ class vectorDatabase:
                 }
             })
         self.index.upsert(vectors=vectors, namespace="threads")
-    def set_filter(self, tags: List[str] = None, username:str=None,min_likes: int = 100, within_days: int = 30):
-        self.filter.by_tags(tags).min_likes(min_likes).within_days(within_days).username(username)
+    def set_filter(self, styles: List[str] = None, username:str=None,min_likes: int = 100, within_days: int = 30):
+        self.filter.by_tags(styles).min_likes(min_likes).within_days(within_days).username(username)
     def query(self, query: str, top_k: int = 5) -> List[Dict]:
         filter = self.filter.build()
         emdQuery = self.embed([query])[0]
