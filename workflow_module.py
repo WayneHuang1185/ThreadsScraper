@@ -49,7 +49,7 @@ class Workflow_config:
 class Workflow:
     def __init__(self):
         try:
-            with open('config/threadsUser.json', 'r', encoding='utf-8') as f:
+            with open('threadsUser.json', 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
             self.threads = ts(username=cfg["username"])
             self.ai = infoLLM()
