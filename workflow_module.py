@@ -61,11 +61,17 @@ class Workflow:
         except Exception as e:
             logger.error(f"Failed to initialize Workflow: {str(e)}")
             raise
-
+    def run_async(self,coro):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
     def tagging_new_scrape_posts_into_pinecone(self):
         try:
             self.threads.filter_setting(self.config.gclike)
-            posts = asyncio.run(self.threads.Top_crawl(self.config.batch))
+            posts = self.run_async(self.threads.Top_crawl(self.config.batch))
             posts = json.loads(self.threads.getJosn(posts))
             results = []
             
@@ -187,16 +193,16 @@ class Workflow:
 
 if __name__ == "__main__":
     workflow = Workflow()
-    # workflow.tagging_new_scrape_posts_into_pinecone() 
-    userquery = input("請輸入要產生的文章內容短敘述:")
-    category = input("請輸入要產生的類別文章：")
-    tag = input("請輸入要使用的標籤:")
-    while category not in ["Emotion","Trend","Practical","Identity"]:
-        print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
-        category = input("請輸入要產生的類別文章：")   
-    size=int(input("請輸入要產生的文章字數："))
-    text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    workflow.select_character_mode('boss')
-    text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    print(text1,text2) 
+    workflow.tagging_new_scrape_posts_into_pinecone() 
+    # userquery = input("請輸入要產生的文章內容短敘述:")
+    # category = input("請輸入要產生的類別文章：")
+    # tag = input("請輸入要使用的標籤:")
+    # while category not in ["Emotion","Trend","Practical","Identity"]:
+    #     print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
+    #     category = input("請輸入要產生的類別文章：")   
+    # size=int(input("請輸入要產生的文章字數："))
+    # text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    # workflow.select_character_mode('boss')
+    # text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    # print(text1,text2) 
 
