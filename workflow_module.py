@@ -45,6 +45,7 @@ class Workflow_config:
                     你的發言:「她終於回我了欸...雖然只是貼圖啦，不過應該還算有想回我吧？
                     唉，我是不是又想太多了...但她如果真的不在乎的話，應該連貼圖都不會回吧...？」
                                       """}
+        self.valid_tone=["none","boss","simp"]
         self.recommendation=3
 class Workflow:
     def __init__(self):
@@ -55,48 +56,10 @@ class Workflow:
             self.ai = infoLLM()
             self.database = db("threads")
             self.config = Workflow_config()
-            self.character=self.config.character_select['none']
             self._set_filter(min_likes=self.config.gclike, within_days=self.config.within_days)
             logger.info("Workflow initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Workflow: {str(e)}")
-            raise
-    def run_async(self,coro):
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
-    def tagging_new_scrape_posts_into_pinecone(self):
-        try:
-            self.threads.filter_setting(self.config.gclike)
-            posts = self.run_async(self.threads.Top_crawl(self.config.batch))
-            posts = json.loads(self.threads.getJosn(posts))
-            results = []
-            
-            for post in posts['posts']:
-                try:
-                    payload = self.ai.system_prompt_tagging + "\n貼文列表:\n" + json.dumps(post, ensure_ascii=False, indent=1)
-                    response = self.ai.client.models.generate_content(
-                        model=self.config.model,
-                        contents=payload,
-                        config={"response_mime_type":"application/json"}
-                    )
-                    single_batch = json.loads(response.text)
-                    results.append(single_batch)
-                except Exception as e:
-                    logger.error(f"Failed to process post: {str(e)}")
-                    continue
-            
-            if results:
-                self.database.store_embeddings_with_tag(posts=results)
-                logger.info(f"Successfully processed {len(results)} posts")
-            else:
-                logger.warning("No posts were processed successfully")
-                
-        except Exception as e:
-            logger.error(f"Failed to scrape posts: {str(e)}")
             raise
 
     def _set_filter(self, styles: Optional[List[str]] = None, min_likes: Optional[int] = None, within_days: Optional[int] = None):
@@ -138,12 +101,54 @@ class Workflow:
         with torch.no_grad():
             scores =self.config.ev_model(**features).logits.squeeze(-1).tolist()
             return scores
-    def select_character_mode(self,mode:str):
-        if mode not in self.config.character_select.keys():
-            return False
+   
+    
+    def _select_character_mode(self):
+        with open("tone.json","r",encoding='utf-8') as f:
+            cfg=json.load(f)
+        mode=cfg.get('tone','none')
+        if mode not in self.config.valid_tone:
+            return 'none'
         else:
-            self.character=self.config.character_select[mode]
-            return True
+            return self.config.character_select[mode]
+    
+    async def tagging_new_scrape_posts_into_pinecone(self):
+        try:
+            self.threads.filter_setting(self.config.gclike)
+            posts =await self.threads.Top_crawl(self.config.batch)
+            posts = json.loads(self.threads.getJosn(posts))
+            results = []
+            
+            for post in posts['posts']:
+                try:
+                    payload = self.ai.system_prompt_tagging + "\n貼文列表:\n" + json.dumps(post, ensure_ascii=False, indent=1)
+                    response = self.ai.client.models.generate_content(
+                        model=self.config.model,
+                        contents=payload,
+                        config={"response_mime_type":"application/json"}
+                    )
+                    single_batch = json.loads(response.text)
+                    results.append(single_batch)
+                except Exception as e:
+                    logger.error(f"Failed to process post: {str(e)}")
+                    continue
+            
+            if results:
+                self.database.store_embeddings_with_tag(posts=results)
+                logger.info(f"Successfully processed {len(results)} posts")
+            else:
+                logger.warning("No posts were processed successfully")
+                
+        except Exception as e:
+            logger.error(f"Failed to scrape posts: {str(e)}")
+            raise
+    def change_tone(self,mode:str):
+        if mode not in self.config.valid_tone:
+            return False
+        with open("tone.json",'w',encoding='utf-8') as f:
+             json.dump({"tone":mode},f,ensure_ascii=False, indent=1)
+        return True
+    
     def generate_post(self, userquery: str, style: str, size: int, tag: str, top_k: Optional[int] = None, 
                     gclike: Optional[int] = None, withindays: Optional[int] = None) -> str: 
         try:    
@@ -151,15 +156,15 @@ class Workflow:
                 raise ValueError(f"Invalid style: {style}")
 
             self._set_filter(styles=[style], min_likes=gclike, within_days=withindays)
-            if top_k is None:
-                top_k = self.config.top_k
-
+            if top_k is not None:
+                self.config.recommendation = top_k
+            top_k = self.config.top_k
             rsp = self._query(userquery=userquery, top_k=top_k)
             if not rsp:
                 logger.warning("No relevant posts found")
                 return ""
-
-            self.ai.set_system_prompt_generate(usermode=self.character,style=style, userquery=userquery, size=size, tag=tag)
+            usermode=self._select_character_mode()
+            self.ai.set_system_prompt_generate(usermode=usermode,style=style, userquery=userquery, size=size, tag=tag)
             messages = [
                 {"role": "system", "content": self.ai.system_prompt_generate}
             ]
@@ -193,16 +198,17 @@ class Workflow:
 
 if __name__ == "__main__":
     workflow = Workflow()
-    workflow.tagging_new_scrape_posts_into_pinecone() 
-    # userquery = input("請輸入要產生的文章內容短敘述:")
-    # category = input("請輸入要產生的類別文章：")
-    # tag = input("請輸入要使用的標籤:")
-    # while category not in ["Emotion","Trend","Practical","Identity"]:
-    #     print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
-    #     category = input("請輸入要產生的類別文章：")   
-    # size=int(input("請輸入要產生的文章字數："))
-    # text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    # workflow.select_character_mode('boss')
-    # text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    # print(text1,text2) 
+    # workflow.tagging_new_scrape_posts_into_pinecone() 
+    userquery = input("請輸入要產生的文章內容短敘述:")
+    category = input("請輸入要產生的類別文章：")
+    tag = input("請輸入要使用的標籤:")
+    while category not in ["Emotion","Trend","Practical","Identity"]:
+        print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
+        category = input("請輸入要產生的類別文章：")   
+    size=int(input("請輸入要產生的文章字數："))
+    workflow.change_tone('boss')
+    text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    workflow.change_tone('simp')
+    text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    print(text1,text2) 
 
