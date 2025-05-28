@@ -68,14 +68,57 @@ class Threads_scraper:
 
     def _sort_posts(self, posts: List[Dict], sort_key: str, ascending: bool = False) -> List[Dict]:
         return sorted(posts, key=lambda p: p.get(sort_key) or 0, reverse=not ascending)
+    async def crawlUser(self, username: str, batch: int = 3) -> List[Dict]:
+        logger.info(f"開始爬蟲帳號：{username}，每個取 {batch} 篇")
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
+            url = self.url + username
+            posts: List[Dict] = []
+            try:
+                await page.goto(url, timeout=60000)
+                await page.wait_for_selector(self.QUERY_SELECTOR, state="attached", timeout=60000)
+            except Exception as e:
+                logger.error(f"無法載入 {url}：{e}")
+                return []
 
+            selector = Selector(await page.content())
+            scripts = selector.css(f"{self.QUERY_SELECTOR}::text").getall()
+            done = False
+            for payload in scripts:
+                if '"thread_items"' not in payload:
+                    continue
+                data = json.loads(payload)
+                for group in nested_lookup("thread_items", data):
+                    for item in group:
+                        parsed = self._parse_post(item)
+                        if self.gclike and int(parsed.get("like_count", 0)) < self.gclike:
+                            continue
+                        if self.gcreply and int(parsed.get("reply_count", 0)) < self.gcreply:
+                            continue
+                        if self.lttext and len(parsed.get("text", "") or "") > self.lttext:
+                            continue
+                        if self.image_retrieve == parsed.get("media_urls"):
+                            continue
+                        if parsed["id"] not in self.seen:
+                            posts.append(parsed)
+                            if len(posts) >= batch:
+                                done = True
+                                break
+                    if done:
+                        break
+                if done:
+                    break
+            posts = self._sort_posts(posts, self.search_choice, self.acc)
+            logger.info(f"共抓到 {len(posts)} 篇貼文")
+            return posts
     async def Top_crawl(self, batch: int = 3) -> List[Dict]:
         logger.info(f"開始爬蟲，共 {len(self.username)} 個帳號，每個取 {batch} 篇")
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context()
             page = await context.new_page()
-            usertmp = self.username.copy()
             posts: List[Dict] = []
 
             for idx, username in enumerate(self.username):
@@ -120,10 +163,8 @@ class Threads_scraper:
                         break
 
                 if len(posts) == pre:
-                    usertmp.remove(username)
                     logger.warning(f"帳號 {username} 沒有抓到符合條件的貼文")
 
-            self.username = usertmp
             posts = self._sort_posts(posts, self.search_choice, self.acc)
             logger.info(f"共抓到 {len(posts)} 篇貼文")
             return posts
@@ -157,10 +198,9 @@ if __name__ == "__main__":
     logger.info("載入 threadsUser 設定")
     with open('config/threadsUser.json', 'r', encoding='utf-8') as f:
         cfg = json.load(f)
-
     threads = Threads_scraper(username=["huang.weizhu"])
     threads.filter_setting(gclike=1)
-    posts = asyncio.run(threads.Top_crawl(batch=10))
+    posts = asyncio.run(threads.crawlUser(username="huang.weizhu",batch=10))
     p = json.loads(threads.getJosn(posts))
     logger.info("完成爬蟲輸出")
     logger.info(json.dumps(p, ensure_ascii=False, indent=1))

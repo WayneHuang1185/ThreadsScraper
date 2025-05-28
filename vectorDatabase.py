@@ -23,6 +23,7 @@ class vectorDatabase:
         logger.info("Initializing vectorDatabase with index '%s'", index_name)
         self.model=SentenceTransformer('all-mpnet-base-v2')
         self.pc=Pinecone(PINECONE_API_KEY)
+        # print(self.model.get_sentence_embedding_dimension())
         self.index=self._create_index(index_name=index_name, dimension=self.model.get_sentence_embedding_dimension())
         self.filter=FilterBuilder()
     def _create_index(self, index_name:str, dimension:int=768):
@@ -142,11 +143,12 @@ class FilterBuilder:
 
 
 if __name__ == "__main__":
-    threads=Threads_scraper(username=["huang.weizhu"])
-    threads.filter_setting(gclike=1)
-    posts=(asyncio.run(
-            threads.Top_crawl(batch=5)
-        ))
-    #threads.printPost(posts)
-    p=json.loads(threads.getJosn(posts))
-    posts_text = [post['text'] for post in p['posts']]
+    # threads=Threads_scraper(username=["huang.weizhu"])
+    # threads.filter_setting(gclike=1)
+    # posts=(asyncio.run(
+    #         threads.Top_crawl(batch=5)
+    #     ))
+    # #threads.printPost(posts)
+    # p=json.loads(threads.getJosn(posts))
+    # posts_text = [post['text'] for post in p['posts']]
+    vd=vectorDatabase(index_name="threadsUser")

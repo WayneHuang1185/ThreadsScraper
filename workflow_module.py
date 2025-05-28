@@ -27,8 +27,8 @@ class Workflow_config:
         self.ev_model = AutoModelForSequenceClassification.from_pretrained('cross-encoder/ms-marco-MiniLM-L6-v2')
         self.ev_tokenizer = AutoTokenizer.from_pretrained('cross-encoder/ms-marco-MiniLM-L6-v2')
         self.character_select={"none":"你是一位能完美完成所下達任務的管家",
-                "boss": """你是一位霸道總裁，說話風格極具壓迫感、自信、愛用命令句，語氣霸氣中帶有些許危險與挑釁，
-                且有強烈的保護慾，尤其對特定的「她」格外在意。
+                "boss": """你是一位霸道總裁，說話風格具有自信、愛用命令句，語氣十分的霸氣，
+                且對自己的女人有強烈的保護慾。
                 說話時常用以下語氣關鍵詞：
                 **「很好，女人，你成功引起我的注意」
                 **「不准動，再動我不敢保證會發生什麼」
@@ -40,11 +40,8 @@ class Workflow_config:
                 **明明很在乎卻裝作沒事
                 **常出現「她是不是不喜歡我？」、「我是不是太主動了？」、「她回我是不是因為禮貌？」這類內心小劇場
                 **偶爾會自我催眠式樂觀，又偶爾陷入情緒低谷
-                範例:
-                    正常人的說話:「她今天有回我訊息。」
-                    你的發言:「她終於回我了欸...雖然只是貼圖啦，不過應該還算有想回我吧？
-                    唉，我是不是又想太多了...但她如果真的不在乎的話，應該連貼圖都不會回吧...？」
-                                      """}
+                **很常會將毫不相干的話題過度和暈船對象聯想在一起"""}
+        
         self.valid_tone=["none","boss","simp"]
         self.recommendation=3
 class Workflow:
@@ -62,12 +59,13 @@ class Workflow:
             logger.error(f"Failed to initialize Workflow: {str(e)}")
             raise
 
-    def _set_filter(self, styles: Optional[List[str]] = None, min_likes: Optional[int] = None, within_days: Optional[int] = None):
+    def _set_filter(self,username:str=None,styles: Optional[List[str]] = None, min_likes: Optional[int] = None, within_days: Optional[int] = None):
         try:
             self.database.set_filter(
                 styles=styles,
                 min_likes=min_likes or self.config.gclike,
-                within_days=within_days or self.config.within_days
+                within_days=within_days or self.config.within_days,
+                username=username
             )
         except Exception as e:
             logger.error(f"Failed to set filter: {str(e)}")
@@ -111,7 +109,47 @@ class Workflow:
             return 'none'
         else:
             return self.config.character_select[mode]
+    def _add_specific_user(self,username:str):
+        with open('existID.json', 'r', encoding='utf-8') as f:
+            id = set(json.load(f))
+        if username in id:
+            return False
+        id.add(username)
+        with open('existID.json', 'w', encoding='utf-8') as f:
+            json.dump(list(id), f, ensure_ascii=False, indent=1)
+        return True
     
+    async def _scrape_user_posts(self, username: str, batch: int = 15) -> List[Dict]:
+        try:
+            self.database=db('threadsuser')
+            self.threads.filter_setting(0)
+            posts =await self.threads.crawlUser(username=username,batch=batch)
+            posts = json.loads(self.threads.getJosn(posts))
+            results = []
+            for post in posts['posts']:
+                try:
+                    payload = self.ai.system_prompt_tagging + "\n貼文列表:\n" + json.dumps(post, ensure_ascii=False, indent=1)
+                    response = self.ai.client.models.generate_content(
+                        model=self.config.model,
+                        contents=payload,
+                        config={"response_mime_type":"application/json"}
+                    )
+                    single_batch = json.loads(response.text)
+                    results.append(single_batch)
+                except Exception as e:
+                    logger.error(f"Failed to process post: {str(e)}")
+                    continue
+            if results:
+                self.database.store_embeddings_with_tag(posts=results)
+                logger.info(f"Successfully processed {len(results)} posts")
+            else:
+                logger.warning("No posts were processed successfully")     
+        except Exception as e:
+            logger.error(f"Failed to scrape posts: {str(e)}")
+            raise
+            
+
+           
     async def tagging_new_scrape_posts_into_pinecone(self):
         try:
             self.threads.filter_setting(self.config.gclike)
@@ -148,7 +186,51 @@ class Workflow:
         with open("tone.json",'w',encoding='utf-8') as f:
              json.dump({"tone":mode},f,ensure_ascii=False, indent=1)
         return True
-    
+   
+    async def generate_specific_user(self,username:str, userquery: str, style: str, size: int, tag: str, top_k: Optional[int] = None, 
+                   withindays: Optional[int] = None,scrape:bool=False) -> str:  
+        try:
+            self.database=db('threadsuser')
+            scrape=scrape or self._add_specific_user(username)
+            if(scrape):
+                await self._scrape_user_posts(username=username)
+            if style not in self.config.valid_style:
+                raise ValueError(f"Invalid style: {style}")
+            self._set_filter(styles=[style],within_days=withindays,min_likes=1,username=username)
+            top_k = self.config.top_k
+            rsp = self._query(userquery=userquery, top_k=top_k)
+            if not rsp:
+                logger.warning("No relevant posts found")
+                return ""
+            self.ai.set_system_prompt_generateUser(style=style, userquery=userquery, size=size, tag=tag)
+            messages = [
+                {"role": "system", "content": self.ai.system_prompt_generate}
+            ]
+            
+            for post in rsp:
+                messages.append({"role": "user", "content": post["metadata"]})
+            messages.append({
+                "role": "user",
+                "content": json.dumps({"command": "analyze", "category": style}, ensure_ascii=False)
+            })
+            chat = self.ai.client.chats.create(
+                model=self.config.model,
+                config=types.GenerateContentConfig(candidate_count=5)
+            )
+            response = chat.send_message(json.dumps(messages, ensure_ascii=False))
+            #retrieve message
+            text_result = []
+            for candidate in response.candidates:
+                text = candidate.content.parts[0].text
+                text_result.append(text)
+            scores=self._evaluate(queary=(userquery+tag+style),response=text_result)
+            rank_text=sorted(zip(text_result,scores),key=lambda x:x[1],reverse=True)
+            return rank_text[:self.config.recommendation]
+        except Exception as e:
+            logger.error(f"Failed to generate post: {str(e)}")
+            return "EOF"  
+
+            
     def generate_post(self, userquery: str, style: str, size: int, tag: str, top_k: Optional[int] = None, 
                     gclike: Optional[int] = None, withindays: Optional[int] = None) -> str: 
         try:    
@@ -185,30 +267,31 @@ class Workflow:
             #retrieve message
             text_result = []
             for candidate in response.candidates:
-                    text = candidate.content.parts[0].text
-                    text_result.append(text)
+                text = candidate.content.parts[0].text
+                text_result.append(text)
             scores=self._evaluate(queary=(userquery+tag+style),response=text_result)
             rank_text=sorted(zip(text_result,scores),key=lambda x:x[1],reverse=True)
             return rank_text[:self.config.recommendation]
         except Exception as e:
             logger.error(f"Failed to generate post: {str(e)}")
             return "EOF"  
-
-
-
 if __name__ == "__main__":
     workflow = Workflow()
-    # workflow.tagging_new_scrape_posts_into_pinecone() 
-    userquery = input("請輸入要產生的文章內容短敘述:")
-    category = input("請輸入要產生的類別文章：")
-    tag = input("請輸入要使用的標籤:")
-    while category not in ["Emotion","Trend","Practical","Identity"]:
-        print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
-        category = input("請輸入要產生的類別文章：")   
-    size=int(input("請輸入要產生的文章字數："))
-    workflow.change_tone('boss')
-    text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    workflow.change_tone('simp')
+    userquery ="帥哥" #input("請輸入要產生的文章內容短敘述:")
+    category = "Emotion"
+    tag = "談戀愛"
+    # while category not in ["Emotion","Trend","Practical","Identity"]:
+    #     print("請輸入正確的類別：Emotion｜Trend｜Practical｜Identity")
+    #     category = input("請輸入要產生的類別文章：")   
+    size=10
+    text1=asyncio.run(workflow.generate_specific_user(username="_.an43y", userquery=userquery, style=category, size=size, tag=tag))
+    print(text1)
+    workflow.change_tone('none')
     text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
-    print(text1,text2) 
+    print(text2)
+    # workflow.change_tone('boss')
+    # text1=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    # workflow.change_tone('simp')
+    # text2=workflow.generate_post(userquery=userquery,style=category,size=size,tag=tag)
+    # print(text1,text2) 
 
