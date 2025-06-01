@@ -39,8 +39,8 @@ class GenerateRequest(BaseModel):
     tag: Optional[str] = Field("", description="標籤")
     withindays: Optional[int] = Field(30, description="天數限制")
     gclikes: Optional[int] = Field(1000, description="最小讚數")
-    top_k: Optional[int] = Field(5, description="參考數量")
-    
+    recommendation: Optional[int] = Field(3, description="參考數量")
+    specific_user: Optional[str] = Field(None, description="特定用戶名稱")
     @validator('style')
     def validate_style(cls, v, values, **kwargs):
         if v not in workflow.config.valid_style:
@@ -55,6 +55,13 @@ class GenerateRequest(BaseModel):
 
 class ToneRequest(BaseModel):
     tone: str = Field(..., description="語氣風格")
+class rankWeightRequest(BaseModel):
+    weight_type: str = Field(..., description="權重種類")
+    @validator('weight_type')
+    def validate_weight(cls, v, values, **kwargs):
+        if v not in workflow.config.rankweight.keys():
+            raise ValueError(f"Invalid weight type. Must be one of: {', '.join(workflow.config.rankweight.keys())}")
+        return v
 class Post(BaseModel):
     text: str = Field(..., description="文章內容")
 class ApiResponse(BaseModel):
@@ -89,9 +96,8 @@ async def generate(request: GenerateRequest, workflow: Workflow = Depends(get_wo
             tag=request.tag,
             withindays=request.withindays,
             gclike=request.gclikes,
-            top_k=request.top_k
+            recommendation=request.recommendation
         )
-
         if post == "EOF":
             return ApiResponse(success=False, error="Failed to generate post after maximum attempts")
         
@@ -101,7 +107,29 @@ async def generate(request: GenerateRequest, workflow: Workflow = Depends(get_wo
     except Exception as e:
         logger.error(f"生成貼文時發生錯誤: {str(e)}")
         return ApiResponse(success=False, error=str(e))
-
+@app.post("/generate_specific_user", response_model=ApiResponse)
+async def generate_specific_user(request: GenerateRequest, workflow: Workflow = Depends(get_workflow)):
+    """生成特定用戶的貼文"""
+    try:
+        if not request.specific_user:
+            return ApiResponse(success=False, error="specific_user cannot be null")
+        logger.info(f"產生特定用戶 '{request.specific_user}' 的貼文") 
+        post = workflow.generate_specific_user_post(
+            userquery=request.userquery,
+            style=request.style,
+            size=request.size,
+            tag=request.tag,
+            withindays=request.withindays,
+            recommendation=request.recommendation,
+            specific_user=request.specific_user
+        )
+        if post == "EOF":
+            return ApiResponse(success=False, error="Failed to generate post after maximum attempts")
+        logger.info("特定用戶貼文生成成功")
+        return ApiResponse(success=True, post=post)
+    except Exception as e:
+        logger.error(f"生成特定用戶貼文時發生錯誤: {str(e)}")
+        return ApiResponse(success=False, error=str(e))
 @app.post("/scrape", response_model=ApiResponse)
 async def scrape(workflow: Workflow = Depends(get_workflow)):
     """抓取新貼文並存入資料庫"""
@@ -119,6 +147,9 @@ async def get_styles(workflow: Workflow = Depends(get_workflow)):
 
 @app.post("/tone", response_model=ApiResponse)
 async def change_tone(request: ToneRequest, workflow: Workflow = Depends(get_workflow)):
+    """格式
+    {"tone": "name"}
+    """
     """變更語氣風格"""
     try:
         if workflow.change_tone(request.tone):
@@ -133,19 +164,31 @@ async def change_tone(request: ToneRequest, workflow: Workflow = Depends(get_wor
 @app.get("/valid_tone",response_model=ApiResponse)
 async def get_tone(workflow: Workflow = Depends(get_workflow)):
         return ApiResponse(success=True, tones=workflow.config.valid_tone)
+@app.post("/weight", response_model=ApiResponse)
+async def change_weight(request:rankWeightRequest,workflow: Workflow = Depends(get_workflow)):
+    """格式
+    {"weight_type":'relevance or recency or traffic'}
+    """
+    """變更權重"""
+    if workflow.change_rankweight(request.weight_type):
+        logger.info(f"權重已改變為 {request.weight_type}")
+        return ApiResponse(success=True, message=f"successfully change into {request.weight_type}'s weight")
+    else:
+        return ApiResponse(success=False, error=f"{request.weight_type} does not exist")
+@app.post("/gerenrate_specific_user", response_model=ApiResponse)
 
-# @app.post("/post",response_model=ApiResponse)
-# async def post_article(request:Post, threads: ThreadsAPI = Depends(get_threads)):
-#     try:
-#         if request.text:
-#             threads.publish_text(request.text)
-#             logger.info("文章已發布")
-#             return ApiResponse(success=True,message="successfully post article")
-#         else:
-#             return ApiResponse(success=False,message="content is null")
-#     except Exception as e:
-#         logger.error(f"發布文章發生錯誤: {str(e)}")
-#         return ApiResponse(success=False, error=str(e))
+@app.post("/post",response_model=ApiResponse)
+async def post_article(request:Post, threads: ThreadsAPI = Depends(get_threads)):
+    try:
+        if request.text:
+            threads.publish_text(request.text)
+            logger.info("文章已發布")
+            return ApiResponse(success=True,message="successfully post article")
+        else:
+            return ApiResponse(success=False,message="content is null")
+    except Exception as e:
+        logger.error(f"發布文章發生錯誤: {str(e)}")
+        return ApiResponse(success=False, error=str(e))
 
 if __name__ == "__main__":
     import uvicorn

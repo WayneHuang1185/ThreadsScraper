@@ -32,6 +32,7 @@ class infoLLM:
             }
             """ 
         self.system_prompt_generate=""
+        self.evaluate_prompt=""
     def set_system_prompt_generate(self,usermode:str,tag:str,style:str,userquery:str,size:int):
             self.system_prompt_generate=f"""
                【系統角色】  
@@ -104,4 +105,26 @@ class infoLLM:
                 }}
                 """
         return self.system_prompt_generate
-
+    def set_evaluate_prompt(self,userquery,style,response):
+         self.evaluate_prompt=f"""
+                你是一位專業的社群分析師，專門評估 Threads 貼文是否具備高流量潛力。
+                你將會看到一則 Threads 貼文，包含其主題分類、貼文文字本身、使用者對於文章的訴求。
+                請根據以下標準，**為該貼文評估一個流量潛力分數，範圍為 0~1（小數點後兩位）**：
+                【評估準則】
+                1. 是否具有「情緒共鳴」或「場景帶入感」
+                2. 是否貼近指定主題分類（Emotion, Trend, Practical, Identity）
+                3. 是否文字洗鍊、節奏流暢，適合 Threads 的閱讀習慣
+                4. 是否能在短時間內吸引讚數與轉傳
+                5. 是否具備新穎性、真誠度，或模仿目前流行貼文風格
+                請以整體印象給出一個分數（格式為小數，例如 0.85、0.32），不要提供任何解釋，只需回覆一個數字。
+                【使用者】
+                使用者需求：{userquery}
+                使用者風格：{style}
+                【Threads貼文】
+                {response}  
+                【輸出格式】
+                ```json{{
+                "score": <評估分數，範圍 0~1，兩位小數>
+                }}
+                """
+         
