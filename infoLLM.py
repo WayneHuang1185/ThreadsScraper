@@ -51,6 +51,7 @@ class infoLLM:
                 1. **吸睛開頭**：一句勾起好奇／共鳴的文字  
                 2. **核心亮點**：緊扣「類別」主題、融入足夠細節  
                 3. **不用產生hashtag**
+                4. **產生的內容一定要正確符合邏輯，這非常的重要**
                 - **字數一定需要小於等於{size}字**，繁體中文。  
                 - **不需要**附上任何圖片或影片。
                 - **使用者需求類似文章**：{userquery}
@@ -105,25 +106,40 @@ class infoLLM:
                 }}
                 """
         return self.system_prompt_generate
-    def set_evaluate_prompt(self,userquery,style,response):
+    def set_evaluate_prompt(self,userquery,style,response,fewshot):
          self.evaluate_prompt=f"""
-                你是一位專業的社群分析師，專門評估 Threads 貼文是否具備高流量潛力。
-                你將會看到一則 Threads 貼文，包含其主題分類、貼文文字本身、使用者對於文章的訴求。
-                請根據以下標準，**為該貼文評估一個流量潛力分數，範圍為 0~1（小數點後兩位）**：
-                【評估準則】
-                1. 是否具有「情緒共鳴」或「場景帶入感」
-                2. 是否貼近指定主題分類（Emotion, Trend, Practical, Identity）
-                3. 是否文字洗鍊、節奏流暢，適合 Threads 的閱讀習慣
-                4. 是否能在短時間內吸引讚數與轉傳
-                5. 是否具備新穎性、真誠度，或模仿目前流行貼文風格
-                請以整體印象給出一個分數（格式為小數，例如 0.85、0.32），不要提供任何解釋，只需回覆一個數字。
-                【使用者】
+                你是一位專業的社群分析師，專門評估貼文是否具備高流量潛力。
+                你將會看到一則貼文，包含其主題分類、貼文文字本身、使用者對於文章的訴求。
+                工作流程分為構思、評估、擇優和產出
+                【評分準則】  
+                1. 情緒共鳴（Emotion）：是否能真實勾起讀者情感共鳴？  
+                2. 主題貼合度（Relevance）：是否緊扣使用者需求或分類？  
+                3. 文字流暢度（Readability）：句子是否通順、易懂，適合 Threads 閱讀？  
+                4. 吸睛效果（Engagement Potential）：開頭是否具有吸引力？  
+                5. 流量效果(High traffic)是否具有和高流量文章相似的文章結構？
+                【工作流程】
+                Step 1 ── Generate Thoughts
+                 - 為每一評分準則（emotion / relevance / readability / engagement / traffic）
+                   產生 3 條不同推理路徑：Thought-A / Thought-B / Thought-C
+                 - 每條推理≤40字，列出該準則的優缺點評析
+                Step 2 ── Rate Thoughts
+                 - 為同一準則的三條 Thought 分別打分 0–1（保留二位小數）
+                Step 3 ── Select Best
+                 - 每個準則只保留得分最高的 Thought，作為最終依據
+                Step 4 ── Compute Scores
+                 - 依保留的最佳 Thought，給該準則一個 0–1 分（兩位小數）
+                 - 綜合五項準則，算出加權平均（各佔 20 %）→ 最終分數需要正規化到 0–1 範圍
+                 - 準備 comments：取最佳 Thought 並縮成 ≤20 字
+                Step 5 ── Discard Scratchpad
+                 - 禁止在最終回覆中顯示任何 “Thought” 或打分過程  
+                【使用者輸入】
                 使用者需求：{userquery}
                 使用者風格：{style}
-                【Threads貼文】
-                {response}  
+                高流量文章範例：{fewshot}
+                欲評估貼文：{response}  
                 【輸出格式】
                 ```json{{
+                "comments": "<評估意見，20字以內>",
                 "score": <評估分數，範圍 0~1，兩位小數>
                 }}
                 """

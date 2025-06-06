@@ -89,6 +89,7 @@ async def generate(request: GenerateRequest, workflow: Workflow = Depends(get_wo
     """
     try:
         logger.info(f"產生風格為 '{request.style}' 的貼文: {request.userquery}") 
+        logger.debug(f"參數: size={request.size}, tag={request.tag}, withindays={request.withindays}, gclikes={request.gclikes}, recommendation={request.recommendation}")
         post = workflow.generate_post(
             userquery=request.userquery,
             style=request.style,
@@ -170,13 +171,34 @@ async def change_weight(request:rankWeightRequest,workflow: Workflow = Depends(g
     {"weight_type":'relevance or recency or traffic'}
     """
     """變更權重"""
-    if workflow.change_rankweight(request.weight_type):
+    if workflow.change_weight(request.weight_type):
         logger.info(f"權重已改變為 {request.weight_type}")
         return ApiResponse(success=True, message=f"successfully change into {request.weight_type}'s weight")
     else:
         return ApiResponse(success=False, error=f"{request.weight_type} does not exist")
-@app.post("/gerenrate_specific_user", response_model=ApiResponse)
-
+@app.post("/generate_specific_user", response_model=ApiResponse)
+async def generate_specific_user(request: GenerateRequest, workflow: Workflow = Depends(get_workflow)):
+    """生成特定用戶的貼文"""
+    try:
+        if not request.specific_user:
+            return ApiResponse(success=False, error="specific_user cannot be null")
+        logger.info(f"產生特定用戶 '{request.specific_user}' 的貼文") 
+        post = workflow.generate_specific_user(
+            userquery=request.userquery,
+            style=request.style,
+            size=request.size,
+            tag=request.tag,
+            withindays=request.withindays,
+            recommendation=request.recommendation,
+            username=request.specific_user
+        )
+        if post == "EOF":
+            return ApiResponse(success=False, error="Failed to generate post after maximum attempts")
+        logger.info("特定用戶貼文生成成功")
+        return ApiResponse(success=True, post=post)
+    except Exception as e:
+        logger.error(f"生成特定用戶貼文時發生錯誤: {str(e)}")
+        return ApiResponse(success=False, error=str(e))
 @app.post("/post",response_model=ApiResponse)
 async def post_article(request:Post, threads: ThreadsAPI = Depends(get_threads)):
     try:
