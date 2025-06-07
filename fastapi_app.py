@@ -6,6 +6,10 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 from workflow_module import Workflow
 from threadsPost import ThreadsAPI
+from datetime import datetime
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
+import pytz, uuid
 # 設置日誌
 logging.basicConfig(
     level=logging.INFO,
@@ -31,6 +35,9 @@ app.add_middleware(
 # 全局工作流實例
 workflow = Workflow()
 threads=ThreadsAPI()
+tz = pytz.timezone("Asia/Taipei")
+scheduler = AsyncIOScheduler(timezone=tz)
+
 # 定義數據模型
 class GenerateRequest(BaseModel):
     userquery: str = Field(..., description="文章主題")
@@ -64,6 +71,10 @@ class rankWeightRequest(BaseModel):
         return v
 class Post(BaseModel):
     text: str = Field(..., description="文章內容")
+    time: Optional[datetime] = Field(
+        None,
+        description="預定發布時間 (ISO 8601)。留空代表立即發布"
+    )
 class ApiResponse(BaseModel):
     success: bool
     message: Optional[str] = None
@@ -77,6 +88,13 @@ def get_workflow():
     return workflow
 def get_threads():
     return threads
+@app.on_event("startup")
+async def start_scheduler():
+    scheduler.start()
+
+@app.on_event("shutdown")
+async def shutdown_scheduler():
+    scheduler.shutdown(wait=False)
 @app.get("/", response_model=ApiResponse)
 async def root():
     return ApiResponse(success=True, message="歡迎使用 Threads 內容產生 API")
@@ -164,7 +182,15 @@ async def change_tone(request: ToneRequest, workflow: Workflow = Depends(get_wor
 
 @app.get("/valid_tone",response_model=ApiResponse)
 async def get_tone(workflow: Workflow = Depends(get_workflow)):
-        return ApiResponse(success=True, tones=workflow.config.valid_tone)
+        tonedata=[]
+        for t in workflow.config.valid_tone:
+            mp={}
+            mp['id']=t
+            mp['name']=workflow.config.character_name[t]
+            mp['discription']=workflow.config.character_decription[t]
+            tonedata.append(mp)
+        logger.info("獲取可用的語氣風格資訊")
+        return ApiResponse(success=True, tones=tonedata)
 @app.post("/weight", response_model=ApiResponse)
 async def change_weight(request:rankWeightRequest,workflow: Workflow = Depends(get_workflow)):
     """格式
@@ -199,19 +225,37 @@ async def generate_specific_user(request: GenerateRequest, workflow: Workflow = 
     except Exception as e:
         logger.error(f"生成特定用戶貼文時發生錯誤: {str(e)}")
         return ApiResponse(success=False, error=str(e))
-@app.post("/post",response_model=ApiResponse)
-async def post_article(request:Post, threads: ThreadsAPI = Depends(get_threads)):
+@app.post("/post", response_model=ApiResponse)
+async def post_article(
+    request: Post,
+    threads: ThreadsAPI = Depends(get_threads)
+):
     try:
-        if request.text:
+        # 若未指定時間或時間在過去 -> 立即發布
+        target_time = request.time
+
+        if not target_time or target_time <= datetime.now(tz):
             threads.publish_text(request.text)
-            logger.info("文章已發布")
-            return ApiResponse(success=True,message="successfully post article")
-        else:
-            return ApiResponse(success=False,message="content is null")
+            logger.info("文章已立即發布")
+            return ApiResponse(success=True, message="Article posted immediately")
+
+        # 有指定未來時間 -> 排程
+        job_id = f"post-{uuid.uuid4()}"
+        scheduler.add_job(
+            threads.publish_text,
+            trigger=DateTrigger(run_date=target_time),
+            args=[request.text],
+            id=job_id,
+            misfire_grace_time=300  # 5 分鐘容錯
+        )
+        logger.info(f"文章已排程，Job ID: {job_id}，將於 {target_time.isoformat()} 發布")
+        return ApiResponse(
+            success=True,
+            message=f"Article scheduled at {target_time.isoformat()} (job {job_id})"
+        )
     except Exception as e:
         logger.error(f"發布文章發生錯誤: {str(e)}")
         return ApiResponse(success=False, error=str(e))
-
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))

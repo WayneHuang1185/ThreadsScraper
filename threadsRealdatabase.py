@@ -2,7 +2,6 @@ import os
 import json
 from typing import List, Dict
 from Threads import Threads_scraper
-import asyncio
 # 新增 firebase-admin
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -26,7 +25,7 @@ def init_firebase():
 # --------------------------------------------
 def store_posts_to_firestore(posts: List[Dict]):
     db = init_firebase()
-    col = db.collection('threads_posts')  # 你要的 collection 名稱
+    col = db.collection('schedule_job')  # 你要的 collection 名稱
     for post in posts:
         # 我們用貼文 id 當作 Document ID，這樣不會重複
         doc_id = post.get("id")

@@ -63,6 +63,7 @@ class Workflow_config:
             "simp": "你是一位重度暈船仔，講話時常會有小劇場，情感豐沛但壓抑不敢說破"
         }
         self.valid_tone = ["none", "boss", "simp"]
+        self.character_name ={"none": "管家", "boss": "霸道總裁", "simp": "暈船仔"}
         self.recommendation = 3
         self.recency_decay_days = 5
         self.multiplier=3
@@ -401,7 +402,7 @@ class Workflow:
                 "role": "user",
                 "content": json.dumps({"command": "analyze", "category": style}, ensure_ascii=False)
             })
-            text_result = []
+            text_result = set()
             while(len(text_result) < recommendation*self.config.multiplier):
                 tem = random.uniform(-0.1, 0.1)
                 #產生文章
@@ -420,7 +421,7 @@ class Workflow:
                     text = candidate.content.parts[0].text
                     if abs(len(text) - size) > 15:
                         continue
-                    text_result.append(text)
+                    text_result.add(text)
             scores = []
             for text in text_result:
                 self.ai.set_evaluate_prompt(userquery=userquery, style=style, response=text, fewshot=fewshot)
@@ -443,7 +444,6 @@ if __name__ == "__main__":
     tag = "戀愛"
 
     # 測試時可以先切換成不同角色
-
     workflow.change_tone('boss')
-    text2 = workflow.generate_post(userquery=userquery, style=category, size=20, tag=tag)
+    text2 = workflow.generate_post(userquery=userquery, style=category, size=30, tag=tag)
     print(text2)
