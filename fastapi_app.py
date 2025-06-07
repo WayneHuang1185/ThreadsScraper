@@ -10,6 +10,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 import pytz, uuid
+import json
 # 設置日誌
 logging.basicConfig(
     level=logging.INFO,
@@ -81,8 +82,8 @@ class ApiResponse(BaseModel):
     error: Optional[str] = None
     post: Optional[Any] = None
     styles: Optional[List[str]] = None
-    tones  : Optional[List[str]] = None
-
+    tones  : Optional[List[dict]] = None
+    weight : Optional[dict[str,float]] = None
 # 依賴函數
 def get_workflow():
     return workflow
@@ -98,7 +99,15 @@ async def shutdown_scheduler():
 @app.get("/", response_model=ApiResponse)
 async def root():
     return ApiResponse(success=True, message="歡迎使用 Threads 內容產生 API")
-
+@app.get("/get_weight",response_model=ApiResponse)
+async def get_weight():
+    try:
+        with open('rankweight.json','r',encoding='utf-8') as f:
+            data=json.load(f)
+        return ApiResponse(success=True,weight=data)
+    except Exception as e:
+        logger.error(f"取得權重時發生錯誤: {str(e)}")
+        return ApiResponse(success=False, error=str(e))
 @app.post("/generate", response_model=ApiResponse)
 async def generate(request: GenerateRequest, workflow: Workflow = Depends(get_workflow)):
     """生成貼文
@@ -184,14 +193,15 @@ async def change_tone(request: ToneRequest, workflow: Workflow = Depends(get_wor
 async def get_tone(workflow: Workflow = Depends(get_workflow)):
         tonedata=[]
         for t in workflow.config.valid_tone:
-            mp={}
-            mp['id']=t
-            mp['name']=workflow.config.character_name[t]
-            mp['discription']=workflow.config.character_decription[t]
-            tonedata.append(mp)
+            item={
+                'id':t,
+                'name':workflow.config.character_name[t],
+                'discription':workflow.config.character_decription[t]
+            }
+            tonedata.append(item)
         logger.info("獲取可用的語氣風格資訊")
         return ApiResponse(success=True, tones=tonedata)
-@app.post("/weight", response_model=ApiResponse)
+@app.post("/change_weight", response_model=ApiResponse)
 async def change_weight(request:rankWeightRequest,workflow: Workflow = Depends(get_workflow)):
     """格式
     {"weight_type":'relevance or recency or traffic'}
