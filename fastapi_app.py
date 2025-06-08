@@ -61,6 +61,15 @@ class GenerateRequest(BaseModel):
             raise ValueError("Size must be a positive integer")
         return v
 
+class ScheduleTime(BaseModel):
+    year:   int = Field(2025, description="year")
+    month:  int = Field(6,   description="month")
+    day:    int = Field(..., description="day")
+    hour:   int = Field(..., description="hour")
+    minute: int = Field(..., description="minute")
+    def to_datetime(self) -> datetime:
+        """方便一行把它轉成 datetime"""
+        return tz.localize(dt=datetime(self.year, self.month, self.day, self.hour, self.minute))
 class ToneRequest(BaseModel):
     tone: str = Field(..., description="語氣風格")
 class rankWeightRequest(BaseModel):
@@ -72,10 +81,11 @@ class rankWeightRequest(BaseModel):
         return v
 class Post(BaseModel):
     text: str = Field(..., description="文章內容")
-    time: Optional[datetime] = Field(
-        None,
-        description="預定發布時間 (ISO 8601)。留空代表立即發布"
-    )
+    schedule: ScheduleTime
+    @property
+    def run_at(self) -> datetime:
+        """快速取得排程執行時間"""
+        return self.schedule.to_datetime()
 class ApiResponse(BaseModel):
     success: bool
     message: Optional[str] = None
@@ -242,8 +252,7 @@ async def post_article(
 ):
     try:
         # 若未指定時間或時間在過去 -> 立即發布
-        target_time = request.time
-
+        target_time = request.run_at
         if not target_time or target_time <= datetime.now(tz):
             threads.publish_text(request.text)
             logger.info("文章已立即發布")
