@@ -38,7 +38,6 @@ class vectorDatabase:
                     cloud='aws',
                     region='us-east-1'
                 ),
-                pod_type="p1"
             )
             while not self.pc.describe_index(index_name).status['ready']:
                 time.sleep(1) 
@@ -88,7 +87,8 @@ class vectorDatabase:
             logger.exception("Failed to upsert vectors or write existID.json")
 
     def set_filter(self, styles: List[str] = None, username:str=None,min_likes: int = 100, within_days: int = 30):
-        logger.debug("Setting filter: styles=%s, username=%s, min_likes=%d, within_days=%d",
+        self.filter = FilterBuilder()
+        logger.debug("Setting filter: styles=%s, username=%s, min_likes=%s, within_days=%s",
                      styles, username, min_likes, within_days)
         self.filter.by_tags(styles).min_likes(min_likes).within_days(within_days).username(username)
     def query(self, query: str, top_k: int = 5) -> List[Dict]:
@@ -106,49 +106,38 @@ class vectorDatabase:
         logger.debug("Query returned %d matches", len(matches))
         return matches
 class FilterBuilder:
-    def __init__(self,tags: Optional[List[str]]=None,username:Optional[str]=None,min_likes: int = 100, within_days: int = 30):
-        self._tag_clause=tags
-        self._min_likes_clause=min_likes
-        self._date_clause=within_days
-        self._username_clause=username
+    def __init__(self):
+        self.clause=[]
     def by_tags(self, tags: List[str]) -> "FilterBuilder":
         if tags:
-            self._tag_clause={ "tag": { "$in": tags }}
+            self.clause.append({ "tag": { "$in": tags }})
         return self
     def min_likes(self, n: int) -> "FilterBuilder":
         if n is not None:
-            self._min_likes_clause={ "like_count": { "$gte": n } }
+            self.clause.append({ "like_count": { "$gte": n } })
         return self
 
     def within_days(self, days: int) -> "FilterBuilder":
         if days is not None:
             cutoff = int((datetime.now(timezone.utc) - timedelta(days=days)).timestamp())
-            self._date_clause={ "created_at": { "$gte": cutoff } }
+            self.clause.append({ "created_at": { "$gte": cutoff } })
         return self
     def username(self, username: str) -> "FilterBuilder":
         if username is not None:
-            self._username_clause={ "username": { "$eq": username } }
+            self.clause.append({ "username": { "$eq": username } })
         return self
     def build(self) -> Optional[dict]:
-        clauses = [self._tag_clause, self._min_likes_clause, self._date_clause, self._username_clause]
-        if None in clauses:
-            clauses.remove(None)
-        if not clauses:
+        if None in self.clause:
+            self.clause.remove(None)
+        if len(self.clause)<=0:
             return None
-        if len(clauses) == 1:
-            return clauses[0]
-        return { "$and": clauses}
+        if len(self.clause) == 1:
+            return self.clause[0]
+        return { "$and": self.clause}
            
         
-
-
 if __name__ == "__main__":
-    # threads=Threads_scraper(username=["huang.weizhu"])
-    # threads.filter_setting(gclike=1)
-    # posts=(asyncio.run(
-    #         threads.Top_crawl(batch=5)
-    #     ))
-    # #threads.printPost(posts)
-    # p=json.loads(threads.getJosn(posts))
-    # posts_text = [post['text'] for post in p['posts']]
-    vd=vectorDatabase(index_name="threadsUser")
+    vd=vectorDatabase()
+    vd.set_filter(username='huang.weizhu',min_likes=1)
+    text=vd.query('好想放假，不想考試',top_k=10)
+    print(text)

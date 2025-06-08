@@ -86,38 +86,32 @@ class Workflow:
             self.ai = infoLLM()
             self.database = db("threads")
             self.config = Workflow_config()
-            self._set_filter(min_likes=self.config.gclike, within_days=self.config.within_days)
             logger.info("Workflow initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Workflow: {str(e)}")
             raise
 
-    def _set_filter(self, username: str = None, styles: Optional[List[str]] = None, min_likes: Optional[int] = None, within_days: Optional[int] = None):
+    def _set_filter(self, username: str = None, styles: Optional[List[str]] = None, min_likes: Optional[int] = 1, within_days: Optional[int] = 30):
         try:
             self.database.set_filter(
                 styles=styles,
-                min_likes=min_likes or self.config.gclike,
-                within_days=within_days or self.config.within_days,
+                min_likes=min_likes,
+                within_days=within_days,
                 username=username
             )
         except Exception as e:
             logger.error(f"Failed to set filter: {str(e)}")
             raise
 
-    def _query(self, userquery: str, top_k: Optional[int] = None) -> List[Dict]:
+    def _query(self, userquery: str, top_k: Optional[int] = None):
         try:
             if top_k is None:
                 top_k = self.config.top_k_forANN
-            filter = self.database.filter.build()
-            emdQuery = self.database.embed([userquery])[0]
-            response = self.database.index.query(
-                vector=emdQuery,
-                top_k=top_k,
-                include_metadata=True,
-                namespace="threads",
-                filter=filter
+            response = self.database.query(
+               query=userquery,
+               top_k=top_k
             )
-            return response["matches"]
+            return response
         except Exception as e:
             logger.error(f"Failed to query database: {str(e)}")
             return []
@@ -152,7 +146,6 @@ class Workflow:
 
     async def _scrape_user_posts(self, username: str, batch: int = 15) -> List[Dict]:
         try:
-            self.database = db('threadsuser')
             self.threads.filter_setting(0)
             posts = await self.threads.crawlUser(username=username, batch=batch)
             posts = json.loads(self.threads.getJosn(posts))
@@ -165,10 +158,6 @@ class Workflow:
                         contents=payload,
                         config={
                             "response_mime_type": "application/json",
-                            # 以下三行是新增 sampling 參數
-                            "temperature": self.config.sampling_temperature,
-                            "top_p": self.config.sampling_top_p,
-                            "top_k": self.config.sampling_top_k
                         }
                     )
                     single_batch = json.loads(response.text)
@@ -253,10 +242,6 @@ class Workflow:
                         contents=payload,
                         config={
                             "response_mime_type": "application/json",
-                            # 新增 sampling 參數
-                            "temperature": self.config.sampling_temperature,
-                            "top_p": self.config.sampling_top_p,
-                            "top_k": self.config.sampling_top_k
                         }
                     )
                     single_batch = json.loads(response.text)
@@ -306,14 +291,13 @@ class Workflow:
                 recommendation = self.config.recommendation
 
             # ANN
-            self._set_filter(styles=[style], within_days=withindays, min_likes=1, username=username)
-            raw = self._query(userquery=userquery, top_k=self.config.top_k_forANN)
+            self._set_filter(username=username,within_days=withindays,min_likes=1,styles=[style])
+            raw = self._query(userquery=userquery, top_k=10)
             if not raw:
                 logger.warning("No relevant posts found")
                 return ""
-
             # reranker
-            rsp = self._rerank(userquery=userquery, matches=raw, top_n=self.config.top_k_forReranker)
+            rsp = self._rerank(userquery=userquery, matches=raw, top_n=5)
 
             # 在 few-shot 裡多加一個小變化：加上「角色設定 + style + userquery」，
             # 並同時插入 sampling 參數，鼓勵生成多樣候選
@@ -439,11 +423,10 @@ class Workflow:
 
 if __name__ == "__main__":
     workflow = Workflow()
-    userquery = "好想要體驗甜甜的戀愛阿，"
-    category = "Emotion"
-    tag = "戀愛"
+    userquery = "經濟學生都該怎麼活"
+    category = "Practical"
+    tag = "台大經濟"
 
     # 測試時可以先切換成不同角色
-    workflow.change_tone('boss')
-    text2 = workflow.generate_post(userquery=userquery, style=category, size=30, tag=tag)
+    text2 = asyncio.run(workflow.generate_specific_user(username='_lee_algebra_',userquery=userquery, style=category, size=50, tag=tag,scrape=True))
     print(text2)

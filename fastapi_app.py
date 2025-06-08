@@ -196,7 +196,7 @@ async def get_tone(workflow: Workflow = Depends(get_workflow)):
             item={
                 'id':t,
                 'name':workflow.config.character_name[t],
-                'discription':workflow.config.character_decription[t]
+                'description':workflow.config.character_decription[t]
             }
             tonedata.append(item)
         logger.info("獲取可用的語氣風格資訊")
