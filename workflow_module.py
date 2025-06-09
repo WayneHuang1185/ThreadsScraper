@@ -1,7 +1,6 @@
 from infoLLM import infoLLM 
 from Threads import Threads_scraper as ts
 from vectorDatabase import vectorDatabase as db
-from threadsPost import ThreadsAPI
 from google.genai import types
 import json
 import asyncio
@@ -16,7 +15,7 @@ import random
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+    )
 logger = logging.getLogger(__name__)
 
 class Workflow_config:
@@ -279,19 +278,18 @@ class Workflow:
             json.dump({"tone": mode}, f, ensure_ascii=False, indent=1)
         return True
 
-    async def generate_specific_user(self, username: str, userquery: str, style: str, size: int, tag: str,
-                                     withindays: Optional[int] = None,
+    async def generate_specific_user(self, username: str, userquery: str, size: int, tag: str,
                                      recommendation: Optional[int] = None, scrape: bool = False) -> Any:
         try:
-            if scrape:
+            with open('threadsUser.json','r',encoding='utf-8') as f:
+                user=set(json.load(f))
+            if username not in user or scrape :
                 await self._scrape_user_posts(username=username)
-            if style not in self.config.valid_style:
-                raise ValueError(f"Invalid style: {style}")
             if recommendation is None:
                 recommendation = self.config.recommendation
 
             # ANN
-            self._set_filter(username=username,within_days=withindays,min_likes=1,styles=[style])
+            self._set_filter(username=username,min_likes=1)
             raw = self._query(userquery=userquery, top_k=10)
             if not raw:
                 logger.warning("No relevant posts found")
@@ -301,7 +299,7 @@ class Workflow:
 
             # 在 few-shot 裡多加一個小變化：加上「角色設定 + style + userquery」，
             # 並同時插入 sampling 參數，鼓勵生成多樣候選
-            self.ai.set_system_prompt_generateUser(style=style, userquery=userquery, size=size, tag=tag)
+            self.ai.set_system_prompt_generateUser(style='', userquery=userquery, size=size, tag=tag)
             messages = [
                 {"role": "system", "content": self.ai.system_prompt_generate}
             ]
@@ -313,7 +311,7 @@ class Workflow:
 
             messages.append({
                 "role": "user",
-                "content": json.dumps({"command": "analyze", "category": style}, ensure_ascii=False)
+                "content": json.dumps({"command": "analyze", "category": 'None'}, ensure_ascii=False)
             })
             chat = self.ai.client.chats.create(
                 model=self.config.model,
@@ -335,7 +333,7 @@ class Workflow:
                 text_result.append(text)
 
                 # evaluate
-                self.ai.set_evaluate_prompt(userquery=userquery, style=style, response=text, fewshot=fewshot)
+                self.ai.set_evaluate_prompt(userquery=userquery, style='None', response=text, fewshot=fewshot)
                 response_evaluate = self.ai.client.models.generate_content(
                     model=self.config.model,
                     contents=self.ai.evaluate_prompt,
@@ -422,6 +420,7 @@ class Workflow:
             return "EOF"
 
 if __name__ == "__main__":
+   
     workflow = Workflow()
     userquery = "經濟學生都該怎麼活"
     category = "Practical"

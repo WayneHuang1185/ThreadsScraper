@@ -70,7 +70,7 @@ class infoLLM:
                 }}
                 """
             return self.system_prompt_generate
-    def set_system_prompt_generateUser(self,tag:str,style:str,userquery:str,size:int):
+    def set_system_prompt_generateUser(self,tag:str,userquery:str,size:int,style:str=None):
         self.system_prompt_generate=f"""
                【系統角色】
                 你是一位模仿達人，你需要盡量模仿使用者輸入的發文風格和語氣，並且最好能在文中適當地引用其平常的用語和表達方式。

@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, HTTPException, Depends
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional
 import logging
 import os
@@ -11,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 import pytz, uuid
 import json
+from schedule import FireStore
 # 設置日誌
 logging.basicConfig(
     level=logging.INFO,
@@ -23,7 +24,6 @@ app = FastAPI(
     description="用於生成 Threads 風格文章的 API",
     version="1.0.0"
 )
-
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
@@ -34,10 +34,9 @@ app.add_middleware(
 )
 
 # 全局工作流實例
-workflow = Workflow()
-threads=ThreadsAPI()
-tz = pytz.timezone("Asia/Taipei")
-scheduler = AsyncIOScheduler(timezone=tz)
+
+# tz = pytz.timezone("Asia/Taipei")
+# scheduler = AsyncIOScheduler(timezone=tz)
 
 # 定義數據模型
 class GenerateRequest(BaseModel):
@@ -49,13 +48,13 @@ class GenerateRequest(BaseModel):
     gclikes: Optional[int] = Field(1000, description="最小讚數")
     recommendation: Optional[int] = Field(3, description="參考數量")
     specific_user: Optional[str] = Field(None, description="特定用戶名稱")
-    @validator('style')
+    @field_validator('style')
     def validate_style(cls, v, values, **kwargs):
         if v not in workflow.config.valid_style:
             raise ValueError(f"Invalid style. Must be one of: {', '.join(workflow.config.valid_style)}")
         return v
     
-    @validator('size')
+    @field_validator('size')
     def validate_size(cls, v, values, **kwargs):
         if not isinstance(v, int) or v <= 0:
             raise ValueError("Size must be a positive integer")
@@ -64,24 +63,26 @@ class GenerateRequest(BaseModel):
 class ScheduleTime(BaseModel):
     year:   int = Field(2025, description="year")
     month:  int = Field(6,   description="month")
-    day:    int = Field(..., description="day")
-    hour:   int = Field(..., description="hour")
-    minute: int = Field(..., description="minute")
+    day:    int = Field(None, description="day")
+    hour:   int = Field(None, description="hour")
+    minute: int = Field(None, description="minute")
     def to_datetime(self) -> datetime:
+        if(not(self.year or self.month or self.day or self.hour or self.minute)):
+            return None
         """方便一行把它轉成 datetime"""
         return tz.localize(dt=datetime(self.year, self.month, self.day, self.hour, self.minute))
 class ToneRequest(BaseModel):
     tone: str = Field(..., description="語氣風格")
 class rankWeightRequest(BaseModel):
     weight_type: str = Field(..., description="權重種類")
-    @validator('weight_type')
+    @field_validator('weight_type')
     def validate_weight(cls, v, values, **kwargs):
         if v not in workflow.config.rankweight.keys():
             raise ValueError(f"Invalid weight type. Must be one of: {', '.join(workflow.config.rankweight.keys())}")
         return v
 class Post(BaseModel):
     text: str = Field(..., description="文章內容")
-    schedule: ScheduleTime
+    schedule: Optional[ScheduleTime]=None
     @property
     def run_at(self) -> datetime:
         """快速取得排程執行時間"""
@@ -95,17 +96,23 @@ class ApiResponse(BaseModel):
     tones  : Optional[List[dict]] = None
     weight : Optional[dict[str,float]] = None
 # 依賴函數
+
 def get_workflow():
     return workflow
 def get_threads():
     return threads
 @app.on_event("startup")
 async def start_scheduler():
-    scheduler.start()
-
+    global workflow
+    global threads
+    global firestore
+    workflow = Workflow()
+    threads=ThreadsAPI()
+    firestore=FireStore()
 @app.on_event("shutdown")
 async def shutdown_scheduler():
-    scheduler.shutdown(wait=False)
+    firestore.schedule.shutdown(wait=False)
+    firestore.watch.unsubscribe()
 @app.get("/", response_model=ApiResponse)
 async def root():
     return ApiResponse(success=True, message="歡迎使用 Threads 內容產生 API")
@@ -229,7 +236,7 @@ async def generate_specific_user(request: GenerateRequest, workflow: Workflow = 
         if not request.specific_user:
             return ApiResponse(success=False, error="specific_user cannot be null")
         logger.info(f"產生特定用戶 '{request.specific_user}' 的貼文") 
-        post = workflow.generate_specific_user(
+        post = await workflow.generate_specific_user(
             userquery=request.userquery,
             style=request.style,
             size=request.size,
@@ -245,36 +252,39 @@ async def generate_specific_user(request: GenerateRequest, workflow: Workflow = 
     except Exception as e:
         logger.error(f"生成特定用戶貼文時發生錯誤: {str(e)}")
         return ApiResponse(success=False, error=str(e))
-@app.post("/post", response_model=ApiResponse)
-async def post_article(
-    request: Post,
-    threads: ThreadsAPI = Depends(get_threads)
-):
-    try:
-        # 若未指定時間或時間在過去 -> 立即發布
-        target_time = request.run_at
-        if not target_time or target_time <= datetime.now(tz):
-            threads.publish_text(request.text)
-            logger.info("文章已立即發布")
-            return ApiResponse(success=True, message="Article posted immediately")
+# @app.post("/post", response_model=ApiResponse)
+# async def post_article(
+#     request: Post,
+#     threads: ThreadsAPI = Depends(get_threads)
+# ):
+#     try:
+#         # 若未指定時間或時間在過去 -> 立即發布
+#         if request.schedule == None:
+#             target_time=None
+#         else:
+#             target_time = request.run_at
+#         if not target_time or target_time <= datetime.now(tz):
+#             threads.publish_text(request.text)
+#             logger.info("文章已立即發布")
+#             return ApiResponse(success=True, message="Article posted immediately")
 
-        # 有指定未來時間 -> 排程
-        job_id = f"post-{uuid.uuid4()}"
-        scheduler.add_job(
-            threads.publish_text,
-            trigger=DateTrigger(run_date=target_time),
-            args=[request.text],
-            id=job_id,
-            misfire_grace_time=300  # 5 分鐘容錯
-        )
-        logger.info(f"文章已排程，Job ID: {job_id}，將於 {target_time.isoformat()} 發布")
-        return ApiResponse(
-            success=True,
-            message=f"Article scheduled at {target_time.isoformat()} (job {job_id})"
-        )
-    except Exception as e:
-        logger.error(f"發布文章發生錯誤: {str(e)}")
-        return ApiResponse(success=False, error=str(e))
+#         # 有指定未來時間 -> 排程
+#         job_id = f"post-{uuid.uuid4()}"
+#         scheduler.add_job(
+#             threads.publish_text,
+#             trigger=DateTrigger(run_date=target_time),
+#             args=[request.text],
+#             id=job_id,
+#             misfire_grace_time=300  # 5 分鐘容錯
+#         )
+#         logger.info(f"文章已排程，Job ID: {job_id}，將於 {target_time.isoformat()} 發布")
+#         return ApiResponse(
+#             success=True,
+#             message=f"Article scheduled at {target_time.isoformat()} (job {job_id})"
+#         )
+#     except Exception as e:
+#         logger.error(f"發布文章發生錯誤: {str(e)}")
+#         return ApiResponse(success=False, error=str(e))
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
