@@ -83,6 +83,7 @@ class ApiResponse(BaseModel):
     styles: Optional[List[str]] = None
     tones  : Optional[List[dict]] = None
     weight : Optional[dict[str,float]] = None
+
 # 依賴函數
 
 def get_workflow():
@@ -250,6 +251,7 @@ async def SetWeight(request:SetWeight,workflow: Workflow = Depends(get_workflow)
     except Exception as e:
         logger.error(f"設定特定權重時發生錯誤: {str(e)}")
         return ApiResponse(success=False, error=str(e))
+
 # @app.post("/post", response_model=ApiResponse)
 # async def post_article(
 #     request: Post,
@@ -286,4 +288,5 @@ async def SetWeight(request:SetWeight,workflow: Workflow = Depends(get_workflow)
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
+    
     uvicorn.run("fastapi_app:app", host="0.0.0.0", port=port, reload=False) 

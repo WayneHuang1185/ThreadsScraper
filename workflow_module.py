@@ -83,7 +83,7 @@ class Workflow:
             logger.error(f"Failed to initialize Workflow: {str(e)}")
             raise
 
-    def _set_filter(self, username: str = None, styles: Optional[List[str]] = None, min_likes: Optional[int] = 1, within_days: Optional[int] = 30):
+    def _set_filter(self, username: str = None, styles: Optional[List[str]] = None, min_likes: Optional[int] = None, within_days: Optional[int] = None):
         try:
             self.database.set_filter(
                 styles=styles,
@@ -286,21 +286,29 @@ class Workflow:
                                      recommendation: Optional[int] = None, scrape: bool = False) -> Any:
         try:
             with open('threadsUser.json','r',encoding='utf-8') as f:
-                user=set(json.load(f))
-            if username not in user or scrape:
+                user=json.load(f)
+                print(user,type(user))
+                userdata=user['username']
+            if username not in userdata or scrape:
                 await self._scrape_user_posts(username=username)
-                user.add(username)
+                userdata.append(username)
                 with open('threadsUser.json', 'w', encoding='utf-8') as f:
-                    json.dump(list(user), f, ensure_ascii=False, indent=1)
+                    write_back={'username':userdata}
+                    json.dump(write_back, f, ensure_ascii=False, indent=1)
             if recommendation is None:
                 recommendation = self.config.recommendation
 
             # ANN
             self._set_filter(username=username)
-            raw = self._query(userquery=userquery, top_k=15)
-            if not raw:
-                logger.warning("No relevant posts found")
-                return ""
+            retry=15
+            for i in range(retry):
+                raw = self._query(userquery=userquery, top_k=15)
+                if(raw):
+                    break 
+                elif i == retry-1:
+                    logger.warning("No relevant posts found")
+                    return ""
+                time.sleep(0.5)
             # reranker
             rsp = self._rerank(userquery=userquery, matches=raw, top_n=5)
 
@@ -429,11 +437,11 @@ class Workflow:
 if __name__ == "__main__":
    
     workflow = Workflow()
-    # userquery = "大師幫我算感情"
-    # category = "Practical"
-    # tag = "感情"
+    userquery = "現在沒女朋友，只有數學"
+    category = "Practical"
+    tag = "愛數學愛數學"
 
-    # # 測試時可以先切換成不同角色
-    # text2 = asyncio.run(workflow.generate_specific_user(username='kkkkyu_keke',userquery=userquery, size=50, tag=tag))
-    # print(text2)
-    workflow.change_weight('relevance')
+    # 測試時可以先切換成不同角色
+    text2 = asyncio.run(workflow.generate_specific_user(username='ycyjeffrey',userquery=userquery, size=50, tag=tag))
+    print(text2)
+    # workflow.change_weight('relevance')
