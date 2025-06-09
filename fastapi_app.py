@@ -60,17 +60,7 @@ class GenerateRequest(BaseModel):
             raise ValueError("Size must be a positive integer")
         return v
 
-class ScheduleTime(BaseModel):
-    year:   int = Field(2025, description="year")
-    month:  int = Field(6,   description="month")
-    day:    int = Field(None, description="day")
-    hour:   int = Field(None, description="hour")
-    minute: int = Field(None, description="minute")
-    def to_datetime(self) -> datetime:
-        if(not(self.year or self.month or self.day or self.hour or self.minute)):
-            return None
-        """方便一行把它轉成 datetime"""
-        return tz.localize(dt=datetime(self.year, self.month, self.day, self.hour, self.minute))
+
 class ToneRequest(BaseModel):
     tone: str = Field(..., description="語氣風格")
 class rankWeightRequest(BaseModel):
@@ -80,13 +70,11 @@ class rankWeightRequest(BaseModel):
         if v not in workflow.config.rankweight.keys():
             raise ValueError(f"Invalid weight type. Must be one of: {', '.join(workflow.config.rankweight.keys())}")
         return v
-class Post(BaseModel):
-    text: str = Field(..., description="文章內容")
-    schedule: Optional[ScheduleTime]=None
-    @property
-    def run_at(self) -> datetime:
-        """快速取得排程執行時間"""
-        return self.schedule.to_datetime()
+
+class SetWeight(BaseModel):
+    relevance:float
+    traffic:float
+    recency:float
 class ApiResponse(BaseModel):
     success: bool
     message: Optional[str] = None
@@ -238,10 +226,8 @@ async def generate_specific_user(request: GenerateRequest, workflow: Workflow = 
         logger.info(f"產生特定用戶 '{request.specific_user}' 的貼文") 
         post = await workflow.generate_specific_user(
             userquery=request.userquery,
-            style=request.style,
             size=request.size,
             tag=request.tag,
-            withindays=request.withindays,
             recommendation=request.recommendation,
             username=request.specific_user
         )
@@ -251,6 +237,18 @@ async def generate_specific_user(request: GenerateRequest, workflow: Workflow = 
         return ApiResponse(success=True, post=post)
     except Exception as e:
         logger.error(f"生成特定用戶貼文時發生錯誤: {str(e)}")
+        return ApiResponse(success=False, error=str(e))
+@app.post("/set_weight",response_model=ApiResponse)
+async def SetWeight(request:SetWeight,workflow: Workflow = Depends(get_workflow)):
+    try:
+        recency = request.recency
+        traffic = request.traffic
+        relevance = request.relevance
+        workflow.set_weight(relevance=relevance, traffic=traffic, recency=recency)
+        logger.info(f"已設定新權重: relevance={relevance}, traffic={traffic}, recency={recency}")
+        return ApiResponse(success=True, message="Successfully set new weights")
+    except Exception as e:
+        logger.error(f"設定特定權重時發生錯誤: {str(e)}")
         return ApiResponse(success=False, error=str(e))
 # @app.post("/post", response_model=ApiResponse)
 # async def post_article(

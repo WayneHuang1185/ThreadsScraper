@@ -66,13 +66,6 @@ class Workflow_config:
         self.recommendation = 3
         self.recency_decay_days = 5
         self.multiplier=3
-        with open("rankweight.json", 'r', encoding='utf-8') as f:
-            try:
-                self.rankweight = json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to load rankweight.json: {str(e)}")
-                logger.info("Using default rankweight values")
-                self.rankweight = {"relevance": 0.6, "traffic": 0.3, "recency": 0.1}
         self.wieghts_step = 0.05
 
 
@@ -101,7 +94,7 @@ class Workflow:
         except Exception as e:
             logger.error(f"Failed to set filter: {str(e)}")
             raise
-
+    
     def _query(self, userquery: str, top_k: Optional[int] = None):
         try:
             if top_k is None:
@@ -215,12 +208,14 @@ class Workflow:
         relevance_scores = self._relevance_score(userquery, matches)
         traffic_scores = self._trafic_score(matches)
         recency_scores = self._recency_scores(matches)
+        with open("rankweight.json", 'r', encoding='utf-8') as f:
+            rankweight = json.load(f)
         combined_scores = []
         for i in range(len(matches)):
             combined_score = (
-                self.config.rankweight["relevance"] * relevance_scores[i] +
-                self.config.rankweight["traffic"] * traffic_scores[i] +
-                self.config.rankweight["recency"] * recency_scores[i]
+                rankweight["relevance"] * relevance_scores[i] +
+                rankweight["traffic"] * traffic_scores[i] +
+                rankweight["recency"] * recency_scores[i]
             )
             combined_scores.append(combined_score)
 
@@ -259,18 +254,27 @@ class Workflow:
             raise
 
     def change_weight(self, target: str) -> bool:
-        if target not in self.config.rankweight:
+        with open("rankweight.json","r",encoding='utf-8') as f:
+            rankweight=json.load(f)
+        if target not in rankweight.keys():
             logger.error(f"Invalid target: {target}. Valid targets are {list(self.config.rankweight.keys())}")
             return False
-        self.config.rankweight[target] += self.config.wieghts_step
-        total = sum(self.config.rankweight.values())
-        for key, value in self.config.rankweight.items():
-            self.config.rankweight[key] = value / total
+        rankweight[target] += self.config.wieghts_step
+        total = sum(rankweight.values())
+        for key, value in rankweight.items():
+            rankweight[key] = value / total
         with open("rankweight.json", 'w', encoding='utf-8') as f:
-            json.dump(self.config.rankweight, f, ensure_ascii=False, indent=1)
-        logger.info(f"Updated {target} weight to {self.config.rankweight[target]}")
+            json.dump(rankweight, f, ensure_ascii=False, indent=1)
+        logger.info(f"Updated {target} weight to {rankweight[target]}")
         return True
-
+    def set_weight(self,relevance:float,traffic:float,recency:float):
+        with open("rankweight.json","r",encoding='utf-8') as f:
+            rankweight=json.load(f)
+        rankweight['relevance']=relevance
+        rankweight['traffic']=traffic
+        rankweight['recency']=recency
+        with open("rankweight.json", 'w', encoding='utf-8') as f:
+            json.dump(rankweight, f, ensure_ascii=False, indent=1)
     def change_tone(self, mode: str):
         if mode not in self.config.valid_tone:
             return False
@@ -283,14 +287,17 @@ class Workflow:
         try:
             with open('threadsUser.json','r',encoding='utf-8') as f:
                 user=set(json.load(f))
-            if username not in user or scrape :
+            if username not in user or scrape:
                 await self._scrape_user_posts(username=username)
+                user.add(username)
+                with open('threadsUser.json', 'w', encoding='utf-8') as f:
+                    json.dump(list(user), f, ensure_ascii=False, indent=1)
             if recommendation is None:
                 recommendation = self.config.recommendation
 
             # ANN
-            self._set_filter(username=username,min_likes=1)
-            raw = self._query(userquery=userquery, top_k=10)
+            self._set_filter(username=username)
+            raw = self._query(userquery=userquery, top_k=15)
             if not raw:
                 logger.warning("No relevant posts found")
                 return ""
@@ -422,10 +429,11 @@ class Workflow:
 if __name__ == "__main__":
    
     workflow = Workflow()
-    userquery = "經濟學生都該怎麼活"
-    category = "Practical"
-    tag = "台大經濟"
+    # userquery = "大師幫我算感情"
+    # category = "Practical"
+    # tag = "感情"
 
-    # 測試時可以先切換成不同角色
-    text2 = asyncio.run(workflow.generate_specific_user(username='_lee_algebra_',userquery=userquery, style=category, size=50, tag=tag,scrape=True))
-    print(text2)
+    # # 測試時可以先切換成不同角色
+    # text2 = asyncio.run(workflow.generate_specific_user(username='kkkkyu_keke',userquery=userquery, size=50, tag=tag))
+    # print(text2)
+    workflow.change_weight('relevance')

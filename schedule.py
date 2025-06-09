@@ -66,20 +66,16 @@ class FireStore:
         for change in changes:
             if change.type.name == 'REMOVED':
                 continue
-
             doc_snap = change.document
             data     = doc_snap.to_dict()
             doc_id   = doc_snap.id
             status   = data.get('status')
             run_at   = data.get('scheduledTime')
+            run_at   = run_at.astimezone(self.tz)
             text     = data.get('content')
-
-            # 1. 过期标记
             if status == 'pending' and run_at < now:
                 self._expire_schedule(doc_id)
                 continue
-
-            # 2. 立即发文
             if status == 'immediate':
                 self._publish_and_cleanup(text, doc_id)
                 continue
